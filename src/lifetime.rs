@@ -1,40 +1,38 @@
 use std::future::Future;
 
-trait FnHelper<'i, 'o>
-where
-    'i: 'o,
-{
+trait FnHelper<'o, I> {
     type Output: 'o;
-    type Fut: Future<Output = Self::Output> + 'o;
-    fn call(&self, arg: &'i str) -> Self::Fut;
+    type Fut: Future<Output = Result<Self::Output, ()>> + 'o;
+    fn call(&self, arg: I) -> Self::Fut;
 }
 
-impl<'i, 'o, FO: 'o, F, O: 'o> FnHelper<'i, 'o> for F
+impl<'o, FO: 'o, F, O: 'o, I: 'o> FnHelper<'o, I> for F
 where
-    'i: 'o,
-    F: Fn(&'i str) -> FO,
-    FO: Future<Output = O>,
+    F: Fn(I) -> FO,
+    FO: Future<Output = Result<O, ()>>,
 {
     type Output = O;
     type Fut = FO;
-    fn call(&self, arg: &'i str) -> FO {
+    fn call(&self, arg: I) -> Self::Fut {
         self(arg)
     }
 }
 
-async fn print_func_result<'i, F>(s: &'i str, func: F) -> <F as FnHelper<'_, '_>>::Output
+async fn print_func_result<'o, F, I>(s: I, func: F) -> Result<<F as FnHelper<'o, I>>::Output, ()>
 where
-    for<'o> F: FnHelper<'i, 'o>,
+    F: FnHelper<'o, I>,
+    I: Copy,
 {
-    let _s1 = func.call(s).await;
+    if let Ok(s1) = func.call(s).await {
+        return Ok(s1);
+    }
     let s2 = func.call(s).await;
     s2
-    // println!("{}", s1);
 }
 
-async fn accept_me(s: &str) -> &str {
+async fn accept_me(s: &str) -> Result<&str, ()> {
     println!("accept {}", s);
-    s
+    Ok(s)
 }
 
 #[cfg(test)]
@@ -44,6 +42,5 @@ mod tests {
     #[tokio::test]
     async fn main() {
         let res = print_func_result("test", accept_me).await;
-        println!("get result {}", res);
     }
 }
